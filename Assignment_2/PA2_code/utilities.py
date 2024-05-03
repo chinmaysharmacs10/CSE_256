@@ -47,6 +47,21 @@ class Utilities:
             #
             # # Show the plot
             # plt.show()
+
+            # Assuming att_map is your numpy array of shape (2, 32, 32)
+            fig, axs = plt.subplots(1, 2, figsize=(10, 5))  # Create a figure with two subplots
+
+            # Plot the first array
+            cax0 = axs[0].imshow(att_map[0], cmap='hot', interpolation='nearest')
+            axs[0].xaxis.tick_top()
+            fig.colorbar(cax0, ax=axs[0])
+
+            # Plot the second array
+            cax1 = axs[1].imshow(att_map[1], cmap='hot', interpolation='nearest')
+            axs[1].xaxis.tick_top()
+            fig.colorbar(cax1, ax=axs[1])
+
+            plt.show()
             
 
 

@@ -7,7 +7,7 @@ import os
 from tokenizer import SimpleTokenizer
 from dataset import SpeechesClassificationDataset, LanguageModelingDataset
 
-from transformer_datacamp import Encoder
+from classifier import Classifier
 from utilities import Utilities
 
 
@@ -106,56 +106,11 @@ def compute_perplexity(decoderLMmodel, data_loader, eval_iters=100):
     return perplexity
 
 
-class Classifier(nn.Module):
-    def __init__(self, vocab_size, drop_prob):
-        super(Classifier, self).__init__()
-        self.encoder = Encoder(n_embd=n_embd, num_heads=n_head, drop_prob=drop_prob, num_layers=n_layer,
-                               vocab_size=vocab_size, block_size=block_size)
-        self.fc_1 = nn.Linear(n_input, n_hidden)
-        self.fc_2 = nn.Linear(n_hidden, n_output)
-        self.relu = nn.ReLU()
-        self.apply(self._init_weights)
-
-    def _init_weights(self, module):
-        if isinstance(module, nn.Linear):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-
-    def forward(self, x):
-        encoder_output, attention_weights = self.encoder(x)
-        pooled_output = torch.mean(encoder_output, dim=1)
-        out = self.fc_2(self.relu(self.fc_1(pooled_output)))
-        return out, attention_weights
-
-
-def main():
-
-    print("Loading data and creating tokenizer ...")
-    text_files_path = '/Users/chinmaysharma/Documents/UCSD_Courses/Spring_2024/CSE_256/Programming_Assignments/Assignment_2/speechesdataset'
-    texts = load_texts(text_files_path)
-    tokenizer = SimpleTokenizer(' '.join(texts))    # create a tokenizer from the data
-    vocab_size = tokenizer.vocab_size
-    print("Vocabulary size is", vocab_size)
-
-    train_CLS_dataset = SpeechesClassificationDataset(tokenizer, text_files_path + "/train_CLS.tsv")
-    train_CLS_loader = DataLoader(train_CLS_dataset, batch_size=batch_size,collate_fn=collate_batch,shuffle=True)
-
-    test_CLS_dataset = SpeechesClassificationDataset(tokenizer, text_files_path + "/test_CLS.tsv")
-    test_CLS_loader = DataLoader(test_CLS_dataset, batch_size=batch_size, collate_fn=collate_batch, shuffle=True)
-
-    inputfile = text_files_path + "/train_LM.txt"
-    with open(inputfile, 'r', encoding='utf-8') as f:
-        lmtrainText = f.read()
-    train_LM_dataset = LanguageModelingDataset(tokenizer, lmtrainText,  block_size)
-    train_LM_loader = DataLoader(train_LM_dataset, batch_size=batch_size, shuffle=True)
-
-    # for the classification  task, you will train for a fixed number of epochs like this:
-    model = Classifier(vocab_size=vocab_size, drop_prob=0.1)
+def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader):
+    model = Classifier(n_embd=n_embd, n_head=n_head, n_layer=n_layer, block_size=block_size, vocab_size=vocab_size,
+                       drop_prob=0.1, n_input=n_input, n_hidden=n_hidden, n_output=n_output)
     m = model.to(device)
-    print(sum(p.numel() for p in m.parameters()) / 1e6, 'M parameters')  # print the number of parameters in the model
+    print('\nNumber of Parameters in the classifier: ', sum(p.numel() for p in m.parameters()) / 1e6, 'M parameters')
 
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -186,7 +141,31 @@ def main():
     utility = Utilities(tokenizer=tokenizer, model=model)
     utility.sanity_check(sentence="These virtues give me an unshakable faith in America", block_size=block_size)
 
-    # for the language modeling task, you will iterate over the training data for a fixed number of iterations like this:
+
+def main():
+
+    print("Loading data and creating tokenizer ...")
+    text_files_path = '/Users/chinmaysharma/Documents/UCSD_Courses/Spring_2024/CSE_256/Programming_Assignments/Assignment_2/speechesdataset'
+    texts = load_texts(text_files_path)
+    tokenizer = SimpleTokenizer(' '.join(texts))    # create a tokenizer from the data
+    vocab_size = tokenizer.vocab_size
+    print("Vocabulary size is", vocab_size)
+
+    train_CLS_dataset = SpeechesClassificationDataset(tokenizer, text_files_path + "/train_CLS.tsv")
+    train_CLS_loader = DataLoader(train_CLS_dataset, batch_size=batch_size,collate_fn=collate_batch,shuffle=True)
+
+    test_CLS_dataset = SpeechesClassificationDataset(tokenizer, text_files_path + "/test_CLS.tsv")
+    test_CLS_loader = DataLoader(test_CLS_dataset, batch_size=batch_size, collate_fn=collate_batch, shuffle=True)
+
+    inputfile = text_files_path + "/train_LM.txt"
+    with open(inputfile, 'r', encoding='utf-8') as f:
+        lmtrainText = f.read()
+    train_LM_dataset = LanguageModelingDataset(tokenizer, lmtrainText,  block_size)
+    train_LM_loader = DataLoader(train_LM_dataset, batch_size=batch_size, shuffle=True)
+
+    train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader)
+
+    # for the language modeling task, you will iterate over the training data for a fixed number of iterations like this
     for i, (xb, yb) in enumerate(train_LM_loader):
         if i >= max_iters:
             break
