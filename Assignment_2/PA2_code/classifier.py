@@ -6,9 +6,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Classifier(nn.Module):
-    def __init__(self, n_embd, n_head, n_layer, block_size, vocab_size, drop_prob, n_input, n_hidden, n_output):
+    def __init__(self, n_embd, n_head, n_layer, block_size, vocab_size, n_input, n_hidden, n_output):
         super(Classifier, self).__init__()
-        self.encoder = Encoder(n_embd=n_embd, num_heads=n_head, drop_prob=drop_prob, num_layers=n_layer,
+        self.encoder = Encoder(n_embd=n_embd, num_heads=n_head, num_layers=n_layer,
                                vocab_size=vocab_size, block_size=block_size)
         self.fc_1 = nn.Linear(n_input, n_hidden)
         self.fc_2 = nn.Linear(n_hidden, n_output)

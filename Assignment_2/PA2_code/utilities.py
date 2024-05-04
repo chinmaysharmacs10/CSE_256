@@ -1,6 +1,6 @@
-
 import matplotlib.pyplot as plt
 import torch
+
 
 class Utilities:
     def __init__(self, tokenizer, model):
@@ -19,51 +19,30 @@ class Utilities:
         print("Input tensor shape:", input_tensor.shape)
 
         # Process the input tensor through the encoder model
-        _,  attn_maps = self.model(input_tensor) # Ignore the output of the model, and only get the attention maps; make sure your encoder returns the attention maps
+        _, attn_maps = self.model(input_tensor)  # Ignore the output of the model, and only get the attention maps; make sure your encoder returns the attention maps
 
         # Display the number of attention maps
         print("Number of attention maps:", len(attn_maps))
 
         # Visualize and save the attention maps
         for j, attn_map in enumerate(attn_maps):
-            print("\nFor attn_map {}".format(j))
             att_map = attn_map.squeeze(0).detach().cpu().numpy()  # Remove batch dimension and convert to NumPy array
 
             # Check if the attention probabilities sum to 1 over rows
             total_prob_over_rows = torch.sum(attn_map[0], dim=1)
             if torch.any(total_prob_over_rows < 0.99) or torch.any(total_prob_over_rows > 1.01):
                 print("Failed normalization test: probabilities do not sum to 1.0 over rows")
-                print("Total probability over rows:", total_prob_over_rows.detach().numpy())
+                print("Total probability over rows:", total_prob_over_rows.numpy())
 
             # Create a heatmap of the attention map
-            # fig, ax = plt.subplots()
-            # cax = ax.imshow(att_map, cmap='hot', interpolation='nearest')
-            # ax.xaxis.tick_top()
-            # fig.colorbar(cax, ax=ax)
-            # plt.title(f"Attention Map {j + 1}")
-            #
-            # # Save the plot
-            # plt.savefig(f"attention_map_{j + 1}.png")
-            #
-            # # Show the plot
-            # plt.show()
-
-            fig, axs = plt.subplots(1, att_map.shape[0], figsize=(10, 5))
-
-            # 1st array
-            cax0 = axs[0].imshow(att_map[0], cmap='hot', interpolation='nearest')
-            axs[0].xaxis.tick_top()
-            fig.colorbar(cax0, ax=axs[0])
-
-            # 2nd array
-            cax1 = axs[1].imshow(att_map[1], cmap='hot', interpolation='nearest')
-            axs[1].xaxis.tick_top()
-            fig.colorbar(cax1, ax=axs[1])
-
+            fig, ax = plt.subplots()
+            cax = ax.imshow(att_map, cmap='hot', interpolation='nearest')
+            ax.xaxis.tick_top()
+            fig.colorbar(cax, ax=ax)
             plt.title(f"Attention Map {j + 1}")
+
+            # Save the plot
             plt.savefig(f"attention_map_{j + 1}.png")
 
+            # Show the plot
             plt.show()
-            
-
-

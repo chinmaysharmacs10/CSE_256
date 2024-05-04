@@ -108,7 +108,7 @@ def compute_perplexity(decoderLMmodel, data_loader, eval_iters=100):
 
 def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader):
     model = Classifier(n_embd=n_embd, n_head=n_head, n_layer=n_layer, block_size=block_size, vocab_size=vocab_size,
-                       drop_prob=0.1, n_input=n_input, n_hidden=n_hidden, n_output=n_output)
+                       n_input=n_input, n_hidden=n_hidden, n_output=n_output)
     m = model.to(device)
     print('\nNumber of Parameters in the classifier: ', sum(p.numel() for p in m.parameters()) / 1e6, 'M parameters')
 

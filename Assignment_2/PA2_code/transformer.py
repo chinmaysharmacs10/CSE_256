@@ -4,7 +4,7 @@ import math
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
+'''
 class MultiHeadAttention(nn.Module):
     def __init__(self, n_embd, num_heads):
         super(MultiHeadAttention, self).__init__()
@@ -44,6 +44,48 @@ class MultiHeadAttention(nn.Module):
         context, attn_prob = self.scaled_dot_product_attention(query, key, value, mask)  # (16 x 2 x 32 x 32), (16 x 2 x 32 x 32)
         output = self.W_o(self.concat_heads(context))   # (16 x 2 x 32 x 64)
         return output, attn_prob
+'''
+
+
+class AttentionHead(nn.Module):
+    def __init__(self, n_embd, head_size, block_size):
+        super(AttentionHead, self).__init__()
+        self.d_k = head_size
+        self.W_q = nn.Linear(n_embd, head_size, bias=False)
+        self.W_k = nn.Linear(n_embd, head_size, bias=False)
+        self.W_v = nn.Linear(n_embd, head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+
+    def forward(self, x, mask=None):
+        batch_size, seq_length, n_embd = x.shape
+        query, key, value = self.W_q(x), self.W_k(x), self.W_v(x)
+        attention_weights = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
+
+        if mask is not None:
+            attention_weights = attention_weights.masked_fill(self.tril[:seq_length, :seq_length] == 0, float('-inf'))
+
+        attention_weights = torch.softmax(attention_weights, dim=-1)
+        out = torch.matmul(attention_weights, value)
+        return out, attention_weights
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, n_embd, num_heads, block_size):
+        super(MultiHeadAttention, self).__init__()
+        head_size = n_embd // num_heads
+        self.attention_heads = nn.ModuleList([AttentionHead(n_embd, head_size, block_size) for _ in range(num_heads)])
+        self.W_o = nn.Linear(n_embd, n_embd)
+
+    def forward(self, x, mask=None):
+        outputs = []
+        attention_weights = []
+        for attention_head in self.attention_heads:
+            out, attention_weight = attention_head(x, mask)
+            outputs.append(out)
+            attention_weights.append(attention_weight)
+        out = torch.cat(outputs, dim=-1)
+        # attention_weights = torch.stack(attention_weights, dim=0).transpose(0, 1)
+        return out, attention_weights
 
 
 class FeedForward(nn.Module):
@@ -57,16 +99,16 @@ class FeedForward(nn.Module):
         return self.fc2(self.relu(self.fc1(x)))
 
 
-class EncoderBlock(nn.Module):
-    def __init__(self, d_model, num_heads, d_ff):
-        super(EncoderBlock, self).__init__()
-        self.multi_head_attention = MultiHeadAttention(d_model, num_heads)
-        self.feed_forward = FeedForward(d_model, d_ff)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
+class Block(nn.Module):
+    def __init__(self, n_embd, num_heads, d_ff, block_size):
+        super(Block, self).__init__()
+        self.multi_head_attention = MultiHeadAttention(n_embd, num_heads, block_size)
+        self.feed_forward = FeedForward(n_embd, d_ff)
+        self.norm1 = nn.LayerNorm(n_embd)
+        self.norm2 = nn.LayerNorm(n_embd)
 
     def forward(self, x, mask):
-        attn_output, attn_prob = self.multi_head_attention(x, x, x, mask)
+        attn_output, attn_prob = self.multi_head_attention(x, mask)
         x = self.norm1(x + attn_output)
         ff_output = self.feed_forward(x)
         x = self.norm2(x + ff_output)
@@ -74,12 +116,12 @@ class EncoderBlock(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, n_embd, num_heads, drop_prob, num_layers, vocab_size, block_size):
+    def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size):
         super(Encoder, self).__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
-        self.encoder_layers = nn.ModuleList([EncoderBlock(d_model=n_embd, num_heads=num_heads, d_ff=(4 * n_embd))
-                                             for _ in range(num_layers)])
+        self.encoder_layers = nn.ModuleList([Block(n_embd=n_embd, num_heads=num_heads, d_ff=(4 * n_embd),
+                                                   block_size=block_size) for _ in range(num_layers)])
 
     def forward(self, x):
         token_embeddings = self.token_embedding_table(x)
@@ -88,5 +130,5 @@ class Encoder(nn.Module):
         attention_weights_list = []
         for layer in self.encoder_layers:
             x, attention_weights = layer(x, mask=None)
-            attention_weights_list.append(attention_weights)
+            attention_weights_list.extend(attention_weights)
         return x, attention_weights_list
