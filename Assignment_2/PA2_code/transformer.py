@@ -8,7 +8,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class MultiHeadAttention(nn.Module):
     def __init__(self, n_embd, num_heads):
         super(MultiHeadAttention, self).__init__()
-        self.d_model = n_embd
+        self.n_embd = n_embd
         self.num_heads = num_heads
         self.d_k = n_embd // num_heads  # 32
 
@@ -17,15 +17,15 @@ class MultiHeadAttention(nn.Module):
         self.W_v = nn.Linear(n_embd, n_embd, bias=False)
         self.W_o = nn.Linear(n_embd, n_embd)
 
-    def scaled_dot_product_attention(self, q, k, v, mask=None):
-        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_k)
+    def scaled_dot_product_attention(self, query, key, value, mask=None):
+        attn_scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
         # (16 x 2 x 32 x 32) @ (16 x 2 x 32 x 32) = (16 x 2 x 32 x 32)
 
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
 
-        attn_probs = torch.softmax(attn_scores, dim=-1)     # (16 x 2 x 32 x 32)
-        context = torch.matmul(attn_probs, v)   # (16 x 2 x 32 x 32) @ (16 x 2 x 32 x 32) = (16 x 2 x 32 x 32)
+        attn_probs = torch.softmax(attn_scores, dim=-2)     # (16 x 2 x 32 x 32)
+        context = torch.matmul(attn_probs, value)   # (16 x 2 x 32 x 32) @ (16 x 2 x 32 x 32) = (16 x 2 x 32 x 32)
         return context, attn_probs
 
     def split_heads(self, x):
@@ -34,14 +34,14 @@ class MultiHeadAttention(nn.Module):
 
     def concat_heads(self, x):
         batch_size, _, seq_length, d_k = x.size()
-        return x.transpose(1, 2).contiguous().view(batch_size, seq_length, self.d_model)
+        return x.transpose(1, 2).contiguous().view(batch_size, seq_length, self.n_embd)
 
-    def forward(self, q, k, v, mask=None):
-        q = self.split_heads(self.W_q(q))   # (16 x 2 x 32 x 32)
-        k = self.split_heads(self.W_k(k))   # (16 x 2 x 32 x 32)
-        v = self.split_heads(self.W_v(v))   # (16 x 2 x 32 x 32)
+    def forward(self, query, key, value, mask=None):
+        query = self.split_heads(self.W_q(query))   # (16 x 2 x 32 x 32)
+        key = self.split_heads(self.W_k(key))   # (16 x 2 x 32 x 32)
+        value = self.split_heads(self.W_v(value))   # (16 x 2 x 32 x 32)
 
-        context, attn_prob = self.scaled_dot_product_attention(q, k, v, mask)   # (16 x 2 x 32 x 32), (16 x 2 x 32 x 32)
+        context, attn_prob = self.scaled_dot_product_attention(query, key, value, mask)  # (16 x 2 x 32 x 32), (16 x 2 x 32 x 32)
         output = self.W_o(self.concat_heads(context))   # (16 x 2 x 32 x 64)
         return output, attn_prob
 
