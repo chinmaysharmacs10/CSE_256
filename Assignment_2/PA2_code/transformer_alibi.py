@@ -36,16 +36,12 @@ class ALiBiMultiHeadAttention(nn.Module):
 
         key, query, value = self.kqv(x).chunk(3, dim=-1)
         key = key.view(batch_size, seq_len, self.num_heads, -1).permute(0, 2, 3, 1)
-        # key.shape == (batch_size, num_heads, d_head, seq_len)
         query = query.view(batch_size, seq_len, self.num_heads, -1).transpose(1, 2)
         value = value.view(batch_size, seq_len, self.num_heads, -1).transpose(1, 2)
-        # qv.shape == (batch_size, num_heads, seq_len, d_head)
 
         bias = (self.m * get_relative_positions(seq_len)).unsqueeze(0)
-        # bias.shape == (1, num_heads, seq_len, seq_len)
 
         score = (torch.matmul(query, key) / self.scale) + bias
-        # score.shape == (batch_size, num_heads, seq_len, seq_len)
 
         if self.causal:
             score = score.masked_fill(
@@ -56,10 +52,12 @@ class ALiBiMultiHeadAttention(nn.Module):
         out = torch.matmul(attn, value)
         # out.shape == (batch_size, num_heads, seq_len, d_head)
         out = out.transpose(1, 2).reshape(batch_size, seq_len, -1)
-        # out.shape == (batch_size, seq_len, d_model)
         out = self.dropout(out)
 
-        return out
+        attention_heads = torch.split(attn, split_size_or_sections=1, dim=1)
+        attention_weights = [head_tensor.squeeze(1) for head_tensor in attention_heads]
+
+        return out, attention_weights
 
 
 class FeedForward(nn.Module):
@@ -80,15 +78,19 @@ class FeedForward(nn.Module):
 class ALiBiTransformerLayer(nn.Module):
     def __init__(self, n_embd, num_heads, block_size, expansion_factor, causal, drop_prob):
         super().__init__()
-        self.ffn_norm = nn.LayerNorm(n_embd)
-        self.attn_norm = nn.LayerNorm(n_embd)
-        self.ffn = FeedForward(n_embd, expansion_factor, drop_prob)
-        self.attn = ALiBiMultiHeadAttention(n_embd, num_heads, block_size, drop_prob, causal)
+        self.layer_norm_1 = nn.LayerNorm(n_embd)
+        self.layer_norm_2 = nn.LayerNorm(n_embd)
+        self.feed_forward = FeedForward(n_embd, expansion_factor, drop_prob)
+        self.alibi_multi_head_attention = ALiBiMultiHeadAttention(n_embd, num_heads, block_size, drop_prob, causal)
 
     def forward(self, x):
-        x = x + self.attn(self.attn_norm(x))
-        x = x + self.ffn(self.ffn_norm(x))
-        return x
+        residual_x = x
+        x, attention_weights = self.alibi_multi_head_attention(x)
+        x = self.layer_norm_1(x + residual_x)
+        residual_x = x
+        x = self.feed_forward(x)
+        x = self.layer_norm_2(x + residual_x)
+        return x, attention_weights
 
 
 class ALiBiEncoder(nn.Module):
@@ -102,15 +104,15 @@ class ALiBiEncoder(nn.Module):
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         x = self.token_embedding_table(x)
-        # attention_weights_list = []
+        attention_weights_list = []
         for layer in self.encoder_layers:
-            x = layer(x)
-            # attention_weights_list.extend(attention_weights)
-        return x, []
+            x, attention_weights = layer(x)
+            attention_weights_list.extend(attention_weights)
+        return x, attention_weights_list
 
 
 class ALiBiDecoder(nn.Module):
-    def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size, expansion_factor, causal) :
+    def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size, expansion_factor, causal):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.decoder_layers = nn.ModuleList(
@@ -122,10 +124,10 @@ class ALiBiDecoder(nn.Module):
     def forward(self, x, y):
         x = self.token_embedding_table(x)
 
-        # attention_weights_list = []
+        attention_weights_list = []
         for layer in self.decoder_layers:
-            x = layer(x)
-            # attention_weights_list.extend(attention_weights)
+            x, attention_weights = layer(x)
+            attention_weights_list.extend(attention_weights)
 
         x = self.fc(x)
 
@@ -134,4 +136,4 @@ class ALiBiDecoder(nn.Module):
         targets = y.view(batch_size * seq_length)
         loss = self.loss_fn(logits, targets)
 
-        return loss, []
+        return loss, attention_weights_list

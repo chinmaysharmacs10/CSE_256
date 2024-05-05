@@ -331,7 +331,7 @@ def main():
     if args.part3:
         print("\nRunning Part 3: Architectural Exploration...")
         loss_list, train_accuracy_list, test_accuracy_list = train_classifier(
-           tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, part3=True)
+           tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, part3=True, sanity_check=args.sanity_check)
 
         train_perplexity_list, obama_perplexity_list, hbush_perplexity_list, wbush_perplexity_list = train_decoder(
             tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim=(4 * n_embd), part3=True)
