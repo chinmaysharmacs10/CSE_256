@@ -3,12 +3,14 @@ from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from torch import nn
 import os
+import argparse
 
 from tokenizer import SimpleTokenizer
 from dataset import SpeechesClassificationDataset, LanguageModelingDataset
 
 from classifier import Classifier
 from utilities import Utilities
+from transformer import Decoder
 
 
 seed = 42
@@ -92,7 +94,7 @@ def compute_perplexity(decoderLMmodel, data_loader, eval_iters=100):
     total_loss = 0.0
     for X, Y in data_loader:
         X, Y = X.to(device), Y.to(device)
-        loss = decoderLMmodel(X, Y) # your model should be computing the cross entropy loss
+        loss, _ = decoderLMmodel(X, Y) # your model should be computing the cross entropy loss
         losses.append(loss.item())
         total_loss += loss.item()
         if len(losses) >= eval_iters: break
@@ -113,7 +115,7 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader):
     print('\nNumber of Parameters in the classifier: ', sum(p.numel() for p in m.parameters()) / 1e6, 'M parameters')
 
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     model.train()
     size = len(train_CLS_loader.dataset)
     num_batches = len(train_CLS_loader)
@@ -138,11 +140,71 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader):
         print("Training accuracy: {}".format(accuracy))
         print("Classifier Accuracy on test set: ", compute_classifier_accuracy(model, test_CLS_loader))
 
-    utility = Utilities(tokenizer=tokenizer, model=model)
-    utility.sanity_check(sentence="These virtues give me an unshakable faith in America", block_size=block_size)
+    # utility = Utilities(tokenizer=tokenizer, model=model)
+    # utility.sanity_check(sentence="These virtues give me an unshakable faith in America", block_size=block_size)
+
+
+def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path):
+    def get_test_perplexity(model, tokenizer, text_files_path, file_name):
+        input_file = text_files_path + "/test_LM_" + str(file_name).lower() + ".txt"
+        with open(input_file, 'r', encoding='utf-8') as f:
+            lm_test_text = f.read()
+        test_lm_dataset = LanguageModelingDataset(tokenizer, lm_test_text, block_size)
+        test_lm_loader = DataLoader(test_lm_dataset, batch_size=batch_size, shuffle=True)
+        print("Perplexity for {}: {}".format(file_name, compute_perplexity(model, test_lm_loader, eval_iters)))
+
+    model = Decoder(n_embd=n_embd, num_heads=n_head, num_layers=n_layer, block_size=block_size, vocab_size=vocab_size,
+                    ff_dim=100)
+    m = model.to(device)
+    print('\nNumber of Parameters in the decoder: ', sum(p.numel() for p in m.parameters()) / 1e6, 'M parameters')
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    model.train()
+
+    for i, (xb, yb) in enumerate(train_LM_loader):
+        if i >= max_iters:
+            break
+
+        xb, yb = xb.to(device), yb.to(device)
+        loss, _ = model(xb, yb)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
+        if (i + 1) % eval_interval == 0:
+            print("\n=> Iter {}".format(i+1))
+            print("Train perplexity: ", compute_perplexity(model, train_LM_loader, eval_iters))
+            for name in ['obama', 'hbush', 'wbush']:
+                get_test_perplexity(model, tokenizer, text_files_path, name)
+
+    # utility = Utilities(tokenizer=tokenizer, model=model)
+    # utility.sanity_check(sentence="These virtues give me an unshakable faith in America", block_size=block_size)
+
+
+def parse_input():
+    parser = argparse.ArgumentParser(prog="PA2", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.set_defaults(func=lambda _: parser.print_help())
+
+    parser.add_argument(
+        '--part1',
+        action='store_true',
+        help='Flag for Part 1: Encoder Trained With Classifier'
+    )
+    parser.add_argument(
+        '--part2',
+        action='store_true',
+        help='Flag for Part 2: Pretraining Decoder Language Model'
+    )
+    parser.add_argument(
+        '--part3',
+        action='store_true',
+        help='Flag for Part 3: Exploration'
+    )
+    return parser.parse_args()
 
 
 def main():
+    args = parse_input()
 
     print("Loading data and creating tokenizer ...")
     text_files_path = '/Users/chinmaysharma/Documents/UCSD_Courses/Spring_2024/CSE_256/Programming_Assignments/Assignment_2/speechesdataset'
@@ -163,14 +225,13 @@ def main():
     train_LM_dataset = LanguageModelingDataset(tokenizer, lmtrainText,  block_size)
     train_LM_loader = DataLoader(train_LM_dataset, batch_size=batch_size, shuffle=True)
 
-    train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader)
+    if args.part1:
+        print("\nRunning Part 1: Encoder Trained With Classifier...")
+        train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader)
 
-    # for the language modeling task, you will iterate over the training data for a fixed number of iterations like this
-    for i, (xb, yb) in enumerate(train_LM_loader):
-        if i >= max_iters:
-            break
-        xb, yb = xb.to(device), yb.to(device)
-        # LM training code here
+    if args.part2:
+        print("\nRunning Part 2: Pretraining Decoder Language Model...")
+        train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path)
 
 
 if __name__ == "__main__":
