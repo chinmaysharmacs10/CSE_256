@@ -4,6 +4,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch import nn
 import os
 import argparse
+import matplotlib.pyplot as plt
 
 from tokenizer import SimpleTokenizer
 from dataset import SpeechesClassificationDataset, LanguageModelingDataset
@@ -108,9 +109,9 @@ def compute_perplexity(decoderLMmodel, data_loader, eval_iters=100):
     return perplexity
 
 
-def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader):
+def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, drop_prob=0.0, batch_norm=False):
     model = Classifier(n_embd=n_embd, n_head=n_head, n_layer=n_layer, block_size=block_size, vocab_size=vocab_size,
-                       n_input=n_input, n_hidden=n_hidden, n_output=n_output)
+                       n_input=n_input, n_hidden=n_hidden, n_output=n_output, drop_prob=drop_prob, batch_norm=batch_norm)
     m = model.to(device)
     print('\nNumber of Parameters in the classifier: ', sum(p.numel() for p in m.parameters()) / 1e6, 'M parameters')
 
@@ -119,6 +120,9 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader):
     model.train()
     size = len(train_CLS_loader.dataset)
     num_batches = len(train_CLS_loader)
+    loss_list = []
+    train_accuracy_list = []
+    test_accuracy_list = []
 
     for epoch in range(epochs_CLS):
         train_loss, correct = 0, 0
@@ -134,32 +138,44 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader):
             optimizer.step()
 
         average_train_loss = train_loss / num_batches
+        loss_list.append(average_train_loss)
         accuracy = correct / size
-        print("\nEpoch #: {}".format(epoch))
+        train_accuracy_list.append(accuracy)
+        test_accuracy = compute_classifier_accuracy(model, test_CLS_loader)
+        test_accuracy_list.append(test_accuracy)
+        print("\nEpoch #: {}".format(epoch + 1))
         print("Training loss: {}".format(average_train_loss))
         print("Training accuracy: {}".format(accuracy))
-        print("Classifier Accuracy on test set: ", compute_classifier_accuracy(model, test_CLS_loader))
+        print("Classifier Accuracy on test set: ", test_accuracy)
 
     # utility = Utilities(tokenizer=tokenizer, model=model)
     # utility.sanity_check(sentence="These virtues give me an unshakable faith in America", block_size=block_size)
+    return loss_list, train_accuracy_list, test_accuracy_list
 
 
-def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path):
+def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim):
+
     def get_test_perplexity(model, tokenizer, text_files_path, file_name):
         input_file = text_files_path + "/test_LM_" + str(file_name).lower() + ".txt"
         with open(input_file, 'r', encoding='utf-8') as f:
             lm_test_text = f.read()
         test_lm_dataset = LanguageModelingDataset(tokenizer, lm_test_text, block_size)
         test_lm_loader = DataLoader(test_lm_dataset, batch_size=batch_size, shuffle=True)
-        print("Perplexity for {}: {}".format(file_name, compute_perplexity(model, test_lm_loader, eval_iters)))
+        test_perplexity = compute_perplexity(model, test_lm_loader, eval_iters)
+        print("Perplexity for {}: {}".format(file_name, test_perplexity))
+        return test_perplexity
 
     model = Decoder(n_embd=n_embd, num_heads=n_head, num_layers=n_layer, block_size=block_size, vocab_size=vocab_size,
-                    ff_dim=100)
+                    ff_dim=ff_dim)
     m = model.to(device)
     print('\nNumber of Parameters in the decoder: ', sum(p.numel() for p in m.parameters()) / 1e6, 'M parameters')
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     model.train()
+    train_perplexity_list = []
+    obama_perplexity_list = []
+    hbush_perplexity_list = []
+    wbush_perplexity_list = []
 
     for i, (xb, yb) in enumerate(train_LM_loader):
         if i >= max_iters:
@@ -172,13 +188,15 @@ def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path):
         optimizer.step()
 
         if (i + 1) % eval_interval == 0:
+            train_perplexity = compute_perplexity(model, train_LM_loader, eval_iters)
+            train_perplexity_list.append(train_perplexity)
             print("\n=> Iter {}".format(i+1))
-            print("Train perplexity: ", compute_perplexity(model, train_LM_loader, eval_iters))
-            for name in ['obama', 'hbush', 'wbush']:
-                get_test_perplexity(model, tokenizer, text_files_path, name)
+            print("Train perplexity: ", train_perplexity)
+            obama_perplexity_list.append(get_test_perplexity(model, tokenizer, text_files_path, "obama"))
+            hbush_perplexity_list.append(get_test_perplexity(model, tokenizer, text_files_path, "hbush"))
+            wbush_perplexity_list.append(get_test_perplexity(model, tokenizer, text_files_path, "wbush"))
 
-    # utility = Utilities(tokenizer=tokenizer, model=model)
-    # utility.sanity_check(sentence="These virtues give me an unshakable faith in America", block_size=block_size)
+    return train_perplexity_list, obama_perplexity_list, hbush_perplexity_list, wbush_perplexity_list
 
 
 def parse_input():
@@ -225,13 +243,58 @@ def main():
     train_LM_dataset = LanguageModelingDataset(tokenizer, lmtrainText,  block_size)
     train_LM_loader = DataLoader(train_LM_dataset, batch_size=batch_size, shuffle=True)
 
+    epochs = [i for i in range(1, 16)]
+
     if args.part1:
         print("\nRunning Part 1: Encoder Trained With Classifier...")
-        train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader)
+        loss_list, train_accuracy_list, test_accuracy_list = train_classifier(tokenizer, vocab_size, train_CLS_loader,
+                                                                              test_CLS_loader)
+        plt.plot(epochs, train_accuracy_list)
+        plt.xlabel('Epochs')
+        plt.ylabel('Training Accuracy')
+        plt.title('Plot of Training Accuracy vs Epochs')
+        plt.savefig(f"part_1_training_accuracy.png")
+        plt.clf()
+
+        plt.plot(epochs, test_accuracy_list)
+        plt.xlabel('Epochs')
+        plt.ylabel('Test Accuracy')
+        plt.title('Plot of Test Accuracy vs Epochs')
+        plt.savefig(f"part_1_test_accuracy.png")
+        plt.clf()
+
+        plt.plot(epochs, loss_list)
+        plt.xlabel('Epochs')
+        plt.ylabel('Training Loss')
+        plt.title('Plot of Training Loss vs Epochs')
+        plt.savefig(f"part_1_training_loss.png")
 
     if args.part2:
         print("\nRunning Part 2: Pretraining Decoder Language Model...")
-        train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path)
+        train_perplexity_list, obama_perplexity_list, hbush_perplexity_list, wbush_perplexity_list = train_decoder(
+            tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim=(4 * n_embd))
+
+        eval_intervals = [i for i in range(100, 501, 100)]
+
+        plt.plot(eval_intervals, train_perplexity_list)
+        plt.xlabel('Eval Interval')
+        plt.ylabel('Training Perplexity')
+        plt.title('Plot of Training Perplexity vs Eval Intervals')
+        plt.savefig(f"part_2_training_perplexity.png")
+        plt.clf()
+
+        plt.plot(eval_intervals, obama_perplexity_list, label='Obama')
+        plt.plot(eval_intervals, hbush_perplexity_list, label='H. Bush')
+        plt.plot(eval_intervals, wbush_perplexity_list, label='W. Bush')
+        plt.xlabel('Eval Interval')
+        plt.ylabel('Test Perplexity')
+        plt.title('Plot of Obama, H. Bush, W. Bush Test Perplexity vs Eval Intervals')
+        plt.legend()
+        plt.savefig(f"part_2_test_perplexity.png")
+
+    if args.part3:
+        print("\nRunning Part 3: Exploration...")
+        train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, drop_prob=0.2, batch_norm=True)
 
 
 if __name__ == "__main__":
