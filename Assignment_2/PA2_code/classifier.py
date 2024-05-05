@@ -1,16 +1,21 @@
 import torch
 from torch import nn
 from transformer import Encoder
+from transformer_alibi import ALiBiEncoder
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Classifier(nn.Module):
     def __init__(self, n_embd, n_head, n_layer, block_size, vocab_size, n_input, n_hidden, n_output, drop_prob,
-                 batch_norm):
+                 batch_norm, part3):
         super(Classifier, self).__init__()
         self.encoder = Encoder(n_embd=n_embd, num_heads=n_head, num_layers=n_layer,
                                vocab_size=vocab_size, block_size=block_size, drop_prob=drop_prob)
+        if part3:
+            self.encoder = ALiBiEncoder(n_embd=n_embd, num_heads=n_head, num_layers=n_layer,  vocab_size=vocab_size,
+                                        block_size=block_size, drop_prob=drop_prob, expansion_factor=4, causal=False)
+
         self.fc_1 = nn.Linear(n_input, n_hidden)
         self.fc_2 = nn.Linear(n_hidden, n_output)
         self.relu = nn.ReLU()
@@ -30,7 +35,6 @@ class Classifier(nn.Module):
     def forward(self, x):
         encoder_output, attention_weights = self.encoder(x)
         pooled_output = torch.mean(encoder_output, dim=1)
-        # out = self.fc_2(self.relu(self.bn(self.fc_1(pooled_output))))
         out = self.fc_1(pooled_output)
         if self.batch_norm:
             out = self.bn(out)

@@ -12,7 +12,7 @@ class AttentionHead(nn.Module):
         self.W_q = nn.Linear(n_embd, head_size, bias=False)
         self.W_k = nn.Linear(n_embd, head_size, bias=False)
         self.W_v = nn.Linear(n_embd, head_size, bias=False)
-        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        self.register_buffer('mask', torch.tril(torch.ones(block_size, block_size)))
         self.dropout = nn.Dropout(p=drop_prob)
 
     def forward(self, x, mask=None):
@@ -21,7 +21,7 @@ class AttentionHead(nn.Module):
         attention_weights = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
 
         if mask is not None:
-            attention_weights = attention_weights.masked_fill(self.tril[:seq_length, :seq_length] == 0, float('-inf'))
+            attention_weights = attention_weights.masked_fill(self.mask[:seq_length, :seq_length] == 0, float('-inf'))
 
         attention_weights = torch.softmax(attention_weights, dim=-1)
         attention_weights = self.dropout(attention_weights)
