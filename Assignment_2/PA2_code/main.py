@@ -1,7 +1,6 @@
 import time
 
 import torch
-from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from torch import nn
@@ -123,7 +122,6 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, d
                        batch_norm=batch_norm, part3=part3)
     m = model.to(device)
     print('\nNumber of Parameters in the classifier: ', sum(p.numel() for p in m.parameters()) / 1e6, 'M parameters')
-    # print('\n', m)
 
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -133,7 +131,6 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, d
     loss_list = []
     train_accuracy_list = []
     test_accuracy_list = []
-    scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 
     start_time = time.time()
     for epoch in range(epochs_CLS):
@@ -149,11 +146,9 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, d
             loss.backward()
             optimizer.step()
 
-        # scheduler.step()
-
         average_train_loss = train_loss / num_batches
         loss_list.append(average_train_loss)
-        accuracy = correct / size
+        accuracy = (correct / size) * 100
         train_accuracy_list.append(accuracy)
         test_accuracy = compute_classifier_accuracy(model, test_CLS_loader)
         test_accuracy_list.append(test_accuracy)
@@ -192,7 +187,6 @@ def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_di
                              vocab_size=vocab_size, expansion_factor=1, causal=True)
     m = model.to(device)
     print('\nNumber of Parameters in the decoder: ', sum(p.numel() for p in m.parameters()) / 1e6, 'M parameters')
-    # print('\n', m)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     model.train()
@@ -299,21 +293,16 @@ def main():
             tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, sanity_check=args.sanity_check)
 
         if args.plot_results:
-            plt.plot(epochs, train_accuracy_list)
+            plt.plot(epochs, train_accuracy_list, linestyle='--', marker='o', label="Training Accuracy")
+            plt.plot(epochs, test_accuracy_list, linestyle='--', marker='o', label="Test Accuracy")
             plt.xlabel('Epochs')
-            plt.ylabel('Training Accuracy')
-            plt.title('Plot of Training Accuracy vs Epochs')
-            plt.savefig(f"part_1_training_accuracy.png")
+            plt.ylabel('Accuracy')
+            plt.title('Plot of Training & Test Accuracy vs Epochs')
+            plt.legend()
+            plt.savefig(f"part_1_training_test_accuracy.png")
             plt.clf()
 
-            plt.plot(epochs, test_accuracy_list)
-            plt.xlabel('Epochs')
-            plt.ylabel('Test Accuracy')
-            plt.title('Plot of Test Accuracy vs Epochs')
-            plt.savefig(f"part_1_test_accuracy.png")
-            plt.clf()
-
-            plt.plot(epochs, loss_list)
+            plt.plot(epochs, loss_list, linestyle='--', marker='o')
             plt.xlabel('Epochs')
             plt.ylabel('Training Loss')
             plt.title('Plot of Training Loss vs Epochs')
@@ -350,45 +339,10 @@ def main():
             tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim=(4 * n_embd), part3=True,
             sanity_check=args.sanity_check)
 
-        if args.plot_results:
-            plt.plot(epochs, train_accuracy_list)
-            plt.xlabel('Epochs')
-            plt.ylabel('Training Accuracy')
-            plt.title('Plot of Training Accuracy vs Epochs')
-            plt.savefig(f"part_3_training_accuracy.png")
-            plt.clf()
-
-            plt.plot(epochs, test_accuracy_list)
-            plt.xlabel('Epochs')
-            plt.ylabel('Test Accuracy')
-            plt.title('Plot of Test Accuracy vs Epochs')
-            plt.savefig(f"part_3_test_accuracy.png")
-            plt.clf()
-
-            plt.plot(epochs, loss_list)
-            plt.xlabel('Epochs')
-            plt.ylabel('Training Loss')
-            plt.title('Plot of Training Loss vs Epochs')
-            plt.savefig(f"part_3_training_loss.png")
-            plt.clf()
-
-            plt.plot(eval_intervals, train_perplexity_list)
-            plt.xlabel('Eval Interval')
-            plt.ylabel('Training Perplexity')
-            plt.title('Plot of Training Perplexity vs Eval Intervals')
-            plt.savefig(f"part_3_training_perplexity.png")
-            plt.clf()
-
-            plt.plot(eval_intervals, obama_perplexity_list, label='Obama')
-            plt.plot(eval_intervals, hbush_perplexity_list, label='H. Bush')
-            plt.plot(eval_intervals, wbush_perplexity_list, label='W. Bush')
-            plt.xlabel('Eval Interval')
-            plt.ylabel('Test Perplexity')
-            plt.title('Plot of Obama, H. Bush, W. Bush Test Perplexity vs Eval Intervals')
-            plt.legend()
-            plt.savefig(f"part_3_test_perplexity.png")
-
         print("\nRunning Part 3: Performance Improvement...")
+        loss_list, train_accuracy_list, test_accuracy_list = train_classifier(
+            tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, part3=True, sanity_check=args.sanity_check,
+            drop_prob=0.2, batch_norm=True)
 
 
 if __name__ == "__main__":
