@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 
-def get_relative_positions(seq_len: int) -> torch.tensor:
+def get_relative_positions(seq_len):
     x = torch.arange(seq_len)[None, :]
     y = torch.arange(seq_len)[:, None]
     return x - y
@@ -24,33 +24,30 @@ class ALiBiMultiHeadAttention(nn.Module):
         super().__init__()
         self.causal = causal
         self.num_heads = num_heads
-        self.scale = math.sqrt(n_embd)
+        self.d_k = math.sqrt(n_embd)
         self.dropout = nn.Dropout(drop_prob)
         self.register_buffer("m", get_alibi_slope(self.num_heads))
-        self.kqv = nn.Linear(n_embd, 3 * n_embd, bias=False)
+        self.key_query_value = nn.Linear(n_embd, 3 * n_embd, bias=False)
         if causal:
             self.register_buffer("mask", torch.tril(torch.ones(1, 1, block_size, block_size)))
 
     def forward(self, x):
         batch_size, seq_len, n_embd = x.shape
 
-        key, query, value = self.kqv(x).chunk(3, dim=-1)
+        key, query, value = self.key_query_value(x).chunk(3, dim=-1)
         key = key.view(batch_size, seq_len, self.num_heads, -1).permute(0, 2, 3, 1)
         query = query.view(batch_size, seq_len, self.num_heads, -1).transpose(1, 2)
         value = value.view(batch_size, seq_len, self.num_heads, -1).transpose(1, 2)
 
         bias = (self.m * get_relative_positions(seq_len)).unsqueeze(0)
 
-        score = (torch.matmul(query, key) / self.scale) + bias
+        score = (torch.matmul(query, key) / self.d_k) + bias
 
         if self.causal:
-            score = score.masked_fill(
-                self.mask[:, :, :seq_len, :seq_len] == 0, float("-inf")
-            )
+            score = score.masked_fill(self.mask[:, :, :seq_len, :seq_len] == 0, float("-inf"))
 
         attn = torch.softmax(score, dim=-1)
         out = torch.matmul(attn, value)
-        # out.shape == (batch_size, num_heads, seq_len, d_head)
         out = out.transpose(1, 2).reshape(batch_size, seq_len, -1)
         out = self.dropout(out)
 
@@ -64,18 +61,20 @@ class FeedForward(nn.Module):
     def __init__(self, n_embd, expansion_factor, drop_prob):
         super().__init__()
         d_hidden = n_embd * expansion_factor
-        self.fc1 = nn.Linear(n_embd, d_hidden)
-        self.fc2 = nn.Linear(d_hidden, n_embd)
+        self.fc_1 = nn.Linear(n_embd, d_hidden)
+        self.fc_2 = nn.Linear(d_hidden, n_embd)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(drop_prob)
 
-    def forward(self, x: torch.tensor) -> torch.tensor:
-        x = self.relu(self.fc1(x))
-        out = self.dropout(self.fc2(x))
-        return out
+    def forward(self, x):
+        x = self.fc_1(x)
+        x = self.relu(x)
+        x = self.fc_2(x)
+        x = self.dropout(x)
+        return x
 
 
-class ALiBiTransformerLayer(nn.Module):
+class ALiBiBlock(nn.Module):
     def __init__(self, n_embd, num_heads, block_size, expansion_factor, causal, drop_prob):
         super().__init__()
         self.layer_norm_1 = nn.LayerNorm(n_embd)
@@ -97,10 +96,8 @@ class ALiBiEncoder(nn.Module):
     def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size, drop_prob, expansion_factor, causal):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
-        self.encoder_layers = nn.ModuleList(
-            [ALiBiTransformerLayer(n_embd, num_heads, block_size, expansion_factor, causal, drop_prob)
-             for _ in range(num_layers)]
-        )
+        self.encoder_layers = nn.ModuleList([ALiBiBlock(n_embd, num_heads, block_size, expansion_factor, causal,
+                                                        drop_prob) for _ in range(num_layers)])
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         x = self.token_embedding_table(x)
@@ -115,9 +112,8 @@ class ALiBiDecoder(nn.Module):
     def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size, expansion_factor, causal):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
-        self.decoder_layers = nn.ModuleList(
-            [ALiBiTransformerLayer(n_embd, num_heads, block_size, expansion_factor, causal, drop_prob=0.0)
-             for _ in range(num_layers)])
+        self.decoder_layers = nn.ModuleList([ALiBiBlock(n_embd, num_heads, block_size, expansion_factor, causal,
+                                                        drop_prob=0.0) for _ in range(num_layers)])
         self.fc = nn.Linear(n_embd, vocab_size)
         self.loss_fn = nn.CrossEntropyLoss()
 

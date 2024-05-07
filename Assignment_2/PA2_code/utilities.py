@@ -7,7 +7,7 @@ class Utilities:
         self.tokenizer = tokenizer
         self.model = model
 
-    def sanity_check(self, sentence, block_size):
+    def sanity_check(self, sentence, block_size, model_type="Encoder"):
         # Encode the sentence using the tokenizer
         wordids = self.tokenizer.encode(sentence)
 
@@ -19,7 +19,10 @@ class Utilities:
         print("Input tensor shape:", input_tensor.shape)
 
         # Process the input tensor through the encoder model
-        _, attn_maps = self.model(input_tensor)  # Ignore the output of the model, and only get the attention maps; make sure your encoder returns the attention maps
+        if model_type == "Decoder":
+            _, attn_maps = self.model(input_tensor, input_tensor)
+        else:
+            _, attn_maps = self.model(input_tensor)
 
         # Display the number of attention maps
         print("Number of attention maps:", len(attn_maps))
@@ -39,10 +42,10 @@ class Utilities:
             cax = ax.imshow(att_map, cmap='hot', interpolation='nearest')
             ax.xaxis.tick_top()
             fig.colorbar(cax, ax=ax)
-            plt.title(f"Attention Map {j + 1}")
+            plt.title(f"{model_type} Attention Map {j + 1}")
 
             # Save the plot
-            plt.savefig(f"attention_map_{j + 1}.png")
+            plt.savefig(f"{model_type}_attention_map_{j + 1}.png")
 
             # Show the plot
             plt.show()

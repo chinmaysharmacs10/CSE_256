@@ -164,13 +164,13 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, d
 
     if sanity_check:
         utility = Utilities(tokenizer=tokenizer, model=model)
-        utility.sanity_check(sentence="These virtues give me an unshakable faith in America", block_size=block_size)
+        utility.sanity_check(sentence="These virtues give me an unshakable faith in America", block_size=block_size,
+                             model_type="Encoder")
 
     return loss_list, train_accuracy_list, test_accuracy_list
 
 
-def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim, part3=False):
-
+def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim, sanity_check=False, part3=False):
     def get_test_perplexity(model, tokenizer, text_files_path, file_name):
         input_file = text_files_path + "/test_LM_" + str(file_name).lower() + ".txt"
         with open(input_file, 'r', encoding='utf-8') as f:
@@ -220,6 +220,12 @@ def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_di
 
     end_time = time.time()
     print('\nTime taken to train decoder: {}'.format(end_time - start_time))
+
+    if sanity_check:
+        utility = Utilities(tokenizer=tokenizer, model=model)
+        utility.sanity_check(sentence="These virtues give me an unshakable faith in America", block_size=block_size,
+                             model_type="Decoder")
+
     return train_perplexity_list, obama_perplexity_list, hbush_perplexity_list, wbush_perplexity_list
 
 
@@ -309,7 +315,7 @@ def main():
     if args.part2:
         print("\nRunning Part 2: Pretraining Decoder Language Model...")
         train_perplexity_list, obama_perplexity_list, hbush_perplexity_list, wbush_perplexity_list = train_decoder(
-            tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim=(4 * n_embd))
+            tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim=(4 * n_embd), sanity_check=args.sanity_check)
 
         if args.plot_results:
             plt.plot(eval_intervals, train_perplexity_list)
@@ -334,7 +340,8 @@ def main():
            tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, part3=True, sanity_check=args.sanity_check)
 
         train_perplexity_list, obama_perplexity_list, hbush_perplexity_list, wbush_perplexity_list = train_decoder(
-            tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim=(4 * n_embd), part3=True)
+            tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim=(4 * n_embd), part3=True,
+            sanity_check=args.sanity_check)
 
         if args.plot_results:
             plt.plot(epochs, train_accuracy_list)
