@@ -90,7 +90,7 @@ def compute_classifier_accuracy(classifier, data_loader):
         return accuracy
 
 
-def compute_perplexity(decoderLMmodel, data_loader, eval_iters=100):
+def compute_perplexity(decoderLMmodel, data_loader, part3, eval_iters=100, model_block_size=block_size):
     """ Compute the perplexity of the decoderLMmodel on the data in data_loader.
     Make sure to use the cross entropy loss for the decoderLMmodel.
     """
@@ -99,7 +99,10 @@ def compute_perplexity(decoderLMmodel, data_loader, eval_iters=100):
     total_loss = 0.0
     for X, Y in data_loader:
         X, Y = X.to(device), Y.to(device)
-        loss, _ = decoderLMmodel(X, Y) # your model should be computing the cross entropy loss
+        if part3:
+            loss, _ = decoderLMmodel(X, Y, model_block_size) # your model should be computing the cross entropy loss
+        else:
+            loss, _ = decoderLMmodel(X, Y)
         losses.append(loss.item())
         total_loss += loss.item()
         if len(losses) >= eval_iters: break
@@ -170,14 +173,15 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, d
     return loss_list, train_accuracy_list, test_accuracy_list
 
 
-def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim, sanity_check=False, part3=False):
+def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim, sanity_check=False, part3=False,
+                  test_block_size=block_size):
     def get_test_perplexity(model, tokenizer, text_files_path, file_name):
         input_file = text_files_path + "/test_LM_" + str(file_name).lower() + ".txt"
         with open(input_file, 'r', encoding='utf-8') as f:
             lm_test_text = f.read()
-        test_lm_dataset = LanguageModelingDataset(tokenizer, lm_test_text, block_size)
+        test_lm_dataset = LanguageModelingDataset(tokenizer, lm_test_text, test_block_size)
         test_lm_loader = DataLoader(test_lm_dataset, batch_size=batch_size, shuffle=True)
-        test_perplexity = compute_perplexity(model, test_lm_loader, eval_iters)
+        test_perplexity = compute_perplexity(model, test_lm_loader, part3, eval_iters, test_block_size)
         print("Perplexity for {}: {:.4f}".format(file_name, test_perplexity))
         return test_perplexity
 
@@ -204,13 +208,16 @@ def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_di
             break
 
         xb, yb = xb.to(device), yb.to(device)
-        loss, _ = model(xb, yb)
+        if part3:
+            loss, _ = model(xb, yb, block_size)
+        else:
+            loss, _ = model(xb, yb)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
 
         if (i + 1) % eval_interval == 0:
-            train_perplexity = compute_perplexity(model, train_LM_loader, eval_iters)
+            train_perplexity = compute_perplexity(model, train_LM_loader, part3, eval_iters, block_size)
             train_perplexity_list.append(train_perplexity)
             print("\n=> Iter {}".format(i+1))
             print("Train perplexity: {:.4f}".format(train_perplexity))

@@ -28,10 +28,8 @@ class ALiBiMultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(drop_prob)
         self.register_buffer("m", get_alibi_slope(self.num_heads))
         self.key_query_value = nn.Linear(n_embd, 3 * n_embd, bias=False)
-        if causal:
-            self.register_buffer("mask", torch.tril(torch.ones(1, 1, block_size, block_size)))
 
-    def forward(self, x):
+    def forward(self, x, block_size):
         batch_size, seq_len, n_embd = x.shape
 
         key, query, value = self.key_query_value(x).chunk(3, dim=-1)
@@ -43,8 +41,9 @@ class ALiBiMultiHeadAttention(nn.Module):
 
         score = (torch.matmul(query, key) / self.d_k) + bias
 
+        mask = torch.tril(torch.ones(1, 1, block_size, block_size))
         if self.causal:
-            score = score.masked_fill(self.mask[:, :, :seq_len, :seq_len] == 0, float("-inf"))
+            score = score.masked_fill(mask[:, :, :seq_len, :seq_len] == 0, float("-inf"))
 
         attn = torch.softmax(score, dim=-1)
         out = torch.matmul(attn, value)
@@ -82,9 +81,9 @@ class ALiBiBlock(nn.Module):
         self.feed_forward = FeedForward(n_embd, expansion_factor, drop_prob)
         self.alibi_multi_head_attention = ALiBiMultiHeadAttention(n_embd, num_heads, block_size, drop_prob, causal)
 
-    def forward(self, x):
+    def forward(self, x, block_size):
         residual_x = x
-        x, attention_weights = self.alibi_multi_head_attention(x)
+        x, attention_weights = self.alibi_multi_head_attention(x, block_size)
         x = self.layer_norm_1(x + residual_x)
         residual_x = x
         x = self.feed_forward(x)
@@ -95,6 +94,7 @@ class ALiBiBlock(nn.Module):
 class ALiBiEncoder(nn.Module):
     def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size, drop_prob, expansion_factor, causal):
         super().__init__()
+        self.block_size = block_size
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.encoder_layers = nn.ModuleList([ALiBiBlock(n_embd, num_heads, block_size, expansion_factor, causal,
                                                         drop_prob) for _ in range(num_layers)])
@@ -103,7 +103,7 @@ class ALiBiEncoder(nn.Module):
         x = self.token_embedding_table(x)
         attention_weights_list = []
         for layer in self.encoder_layers:
-            x, attention_weights = layer(x)
+            x, attention_weights = layer(x, self.block_size)
             attention_weights_list.extend(attention_weights)
         return x, attention_weights_list
 
@@ -117,12 +117,12 @@ class ALiBiDecoder(nn.Module):
         self.fc = nn.Linear(n_embd, vocab_size)
         self.loss_fn = nn.CrossEntropyLoss()
 
-    def forward(self, x, y):
+    def forward(self, x, y, block_size):
         x = self.token_embedding_table(x)
 
         attention_weights_list = []
         for layer in self.decoder_layers:
-            x, attention_weights = layer(x)
+            x, attention_weights = layer(x, block_size)
             attention_weights_list.extend(attention_weights)
 
         x = self.fc(x)
