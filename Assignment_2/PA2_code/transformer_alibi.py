@@ -11,6 +11,9 @@ def get_relative_positions(seq_len):
 
 
 def get_alibi_slope(num_heads):
+    """
+    Function to get ALiBi slopes
+    """
     x = (2 ** 8) ** (1 / num_heads)
     return (
         torch.tensor([1 / x ** (i + 1) for i in range(num_heads)])
@@ -20,6 +23,12 @@ def get_alibi_slope(num_heads):
 
 
 class ALiBiMultiHeadAttention(nn.Module):
+    """
+    Multi-head attention block of a layer which uses ALiBi with num_heads attention heads
+    Returns
+    -------
+    Context vector and num_heads attention matrices, i.e. attention weights per head
+    """
     def __init__(self, n_embd, num_heads, block_size, drop_prob, causal):
         super().__init__()
         self.causal = causal
@@ -74,6 +83,9 @@ class FeedForward(nn.Module):
 
 
 class ALiBiBlock(nn.Module):
+    """
+    A single transformer block which uses ALiBi attention. Can be used to create encoder-only/decoder-only models
+    """
     def __init__(self, n_embd, num_heads, block_size, expansion_factor, causal, drop_prob):
         super().__init__()
         self.layer_norm_1 = nn.LayerNorm(n_embd)
@@ -92,6 +104,12 @@ class ALiBiBlock(nn.Module):
 
 
 class ALiBiEncoder(nn.Module):
+    """
+    Encoder-only model with n_layer blocks which uses ALiBi multi-head attention
+    Returns
+    -------
+    Embeddings of n_embd size and list of attention matrices for all heads
+    """
     def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size, drop_prob, expansion_factor, causal):
         super().__init__()
         self.block_size = block_size
@@ -109,6 +127,12 @@ class ALiBiEncoder(nn.Module):
 
 
 class ALiBiDecoder(nn.Module):
+    """
+    Decoder-only model with n_layer blocks which uses ALiBi multi-head attention
+    Returns
+    -------
+    Cross-entropy loss between actual and predicted output sentence, and list of attention matrices for all heads
+    """
     def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size, expansion_factor, causal):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)

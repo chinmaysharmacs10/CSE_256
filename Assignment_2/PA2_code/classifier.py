@@ -7,12 +7,15 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Classifier(nn.Module):
+    """
+    Classifier model which uses embeddings from encoder
+    """
     def __init__(self, n_embd, n_head, n_layer, block_size, vocab_size, n_input, n_hidden, n_output, drop_prob,
                  batch_norm, part3):
         super(Classifier, self).__init__()
         self.encoder = Encoder(n_embd=n_embd, num_heads=n_head, num_layers=n_layer,
                                vocab_size=vocab_size, block_size=block_size, drop_prob=drop_prob)
-        if part3:
+        if part3:   # Use encoder with ALiBi attention if true
             self.encoder = ALiBiEncoder(n_embd=n_embd, num_heads=n_head, num_layers=n_layer,  vocab_size=vocab_size,
                                         block_size=block_size, drop_prob=drop_prob, expansion_factor=4, causal=False)
 
@@ -25,6 +28,9 @@ class Classifier(nn.Module):
         self.apply(self._init_weights)
 
     def _init_weights(self, module):
+        """
+        Method to initialize weights for better and stable performance
+        """
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:

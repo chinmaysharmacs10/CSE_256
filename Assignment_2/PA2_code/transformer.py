@@ -6,6 +6,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class AttentionHead(nn.Module):
+    """
+    Single attention head
+    """
     def __init__(self, n_embd, head_size, block_size, drop_prob):
         super(AttentionHead, self).__init__()
         self.d_k = head_size
@@ -30,6 +33,9 @@ class AttentionHead(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
+    """
+    Multi-head attention component of an encoder/decoder block which contains num_heads attention heads
+    """
     def __init__(self, n_embd, num_heads, block_size, drop_prob):
         super(MultiHeadAttention, self).__init__()
         head_size = n_embd // num_heads
@@ -53,6 +59,9 @@ class MultiHeadAttention(nn.Module):
 
 
 class FeedForward(nn.Module):
+    """
+    Feed-forward network of encoder/decoder block
+    """
     def __init__(self, n_embd, ff_dim, drop_prob):
         super(FeedForward, self).__init__()
         self.fc_1 = nn.Linear(n_embd, ff_dim)
@@ -69,6 +78,9 @@ class FeedForward(nn.Module):
 
 
 class Block(nn.Module):
+    """
+    A single transformer block. Can be used to create encoder-only/decoder-only models
+    """
     def __init__(self, n_embd, num_heads, ff_dim, block_size, drop_prob):
         super(Block, self).__init__()
         self.multi_head_attention = MultiHeadAttention(n_embd, num_heads, block_size, drop_prob)
@@ -91,6 +103,12 @@ class Block(nn.Module):
 
 
 class Encoder(nn.Module):
+    """
+    Encoder-only model with n_layer blocks
+    Returns
+    -------
+    Embeddings of n_embd size and list of attention matrices for all heads
+    """
     def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size, drop_prob):
         super(Encoder, self).__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
@@ -110,6 +128,12 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
+    """
+    Decoder-only model with n_layer blocks
+    Returns
+    -------
+    Cross-entropy loss between actual and predicted output sentence, and list of attention matrices for all heads
+    """
     def __init__(self, n_embd, num_heads, num_layers, vocab_size, block_size, ff_dim):
         super(Decoder, self).__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)

@@ -117,6 +117,12 @@ def compute_perplexity(decoderLMmodel, data_loader, part3, eval_iters=100, model
 
 def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, drop_prob=0.0, batch_norm=False,
                      sanity_check=False, part3=False):
+    """
+    Function to train classifier for part 1 and part 3, and obtain training & test accuracies
+    Returns
+    -------
+    Training loss, training accuracy and test accuracy for each epoch
+    """
     model = Classifier(n_embd=n_embd, n_head=n_head, n_layer=n_layer, block_size=block_size, vocab_size=vocab_size,
                        n_input=n_input, n_hidden=n_hidden, n_output=n_output, drop_prob=drop_prob,
                        batch_norm=batch_norm, part3=part3)
@@ -170,7 +176,16 @@ def train_classifier(tokenizer, vocab_size, train_CLS_loader, test_CLS_loader, d
 
 def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_dim, sanity_check=False, part3=False,
                   test_block_size=block_size):
+    """
+    Function to train decoder-only model for part 2 and part 3, and obtain training and test perplexities
+    Returns
+    -------
+    Training and test perplexity for iteration after every eval_interval iterations
+    """
     def get_test_perplexity(model, tokenizer, text_files_path, file_name):
+        """
+        Method to compute decoder-only model's perplexity on the politician's test set defined by file_name
+        """
         input_file = text_files_path + "/test_LM_" + str(file_name).lower() + ".txt"
         with open(input_file, 'r', encoding='utf-8') as f:
             lm_test_text = f.read()
@@ -182,7 +197,7 @@ def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_di
 
     model = Decoder(n_embd=n_embd, num_heads=n_head, num_layers=n_layer, block_size=block_size, vocab_size=vocab_size,
                     ff_dim=ff_dim)
-    if part3:
+    if part3:   # Use decoder with ALiBi attention if true
         model = ALiBiDecoder(n_embd=n_embd, num_heads=n_head, num_layers=n_layer, block_size=block_size,
                              vocab_size=vocab_size, expansion_factor=1, causal=True)
     m = model.to(device)
@@ -231,6 +246,12 @@ def train_decoder(tokenizer, vocab_size, train_LM_loader, text_files_path, ff_di
 
 
 def parse_input():
+    """
+    Function to parse CLI inputs using argparse
+    Returns
+    -------
+    boolean values for flags part1, part2, part3, sanity_check & plot_results
+    """
     parser = argparse.ArgumentParser(prog="PA2", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.set_defaults(func=lambda _: parser.print_help())
 
@@ -287,6 +308,7 @@ def main():
     epochs = [i for i in range(1, 16)]
     eval_intervals = [i for i in range(100, 501, 100)]
 
+    # Execute Part 1: Encoder Trained With Classifier
     if args.part1:
         print("\nRunning Part 1: Encoder Trained With Classifier...")
         loss_list, train_accuracy_list, test_accuracy_list = train_classifier(
@@ -308,6 +330,7 @@ def main():
             plt.title('Plot of Training Loss vs Epochs')
             plt.savefig(f"part_1_training_loss.png")
 
+    # Execute Part 2: Pretraining Decoder Language Model
     if args.part2:
         print("\nRunning Part 2: Pretraining Decoder Language Model...")
         train_perplexity_list, obama_perplexity_list, hbush_perplexity_list, wbush_perplexity_list = train_decoder(
@@ -330,6 +353,7 @@ def main():
             plt.legend()
             plt.savefig(f"part_2_test_perplexity.png")
 
+    # Execute Part 3: Exploration
     if args.part3:
         print("\nRunning Part 3: Architectural Exploration...")
         loss_list, train_accuracy_list, test_accuracy_list = train_classifier(
