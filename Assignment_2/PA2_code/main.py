@@ -287,7 +287,7 @@ def main():
     args = parse_input()
 
     print("Loading data and creating tokenizer ...")
-    text_files_path = '/Users/chinmaysharma/Documents/UCSD_Courses/Spring_2024/CSE_256/Programming_Assignments/Assignment_2/speechesdataset'
+    text_files_path = '../speechesdataset'
     texts = load_texts(text_files_path)
     tokenizer = SimpleTokenizer(' '.join(texts))    # create a tokenizer from the data
     vocab_size = tokenizer.vocab_size
